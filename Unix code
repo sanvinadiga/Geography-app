@@ -1,0 +1,151 @@
+#!/bin/bash
+
+exit_loop=false
+while [ "$exit_loop" = false ];
+do
+data=$(cat dataset.txt)
+
+# Function to print countries and their regions/continents
+print_countries_with_regions() {
+ awk -v filter_letter="$1" -v filter_length="$2" \
+   '{
+     if ((tolower(substr($1, 1, 1)) == tolower(filter_letter) || filter_letter == "") &&
+         (length(filter_length) == 0 || length($1) == filter_length))
+     {
+       printf "%-25s %-25s %s\n", $1, $2, $3
+     }
+   }' <<< "$data"
+}
+
+progress_bar() {
+  (
+    for ((i = 0; i <= 100; i++)); do
+      sleep 0.05
+      echo "$((i * 100 / 100))"
+      echo "# Updating... $i%"
+    done
+  ) | zenity --progress --title="Sorting" --text="Sorting..." --auto-close
+}
+
+
+
+
+# Function to print sorted list by country
+print_sorted_by_country() {
+    sorted_countries=$(sort -k1,1 -f <<< "$data")
+    sorted_file=$(mktemp)
+    echo "$sorted_countries" > "$sorted_file"
+
+    zenity --text-info --title="Sorted Countries" --width=600 --height=400 --filename="$sorted_file"
+    rm "$sorted_file"
+}
+
+
+
+
+
+
+search_by_region_zenity() {
+    region=$(zenity --entry --title="Search Countries by Region" --text="Enter a region/continent to search for its corresponding countries:")
+    if [ -n "$region" ]; then
+        result=$(awk -v reg="$region" 'tolower($3) == tolower(reg) {print $1}' <<< "$data")
+        if [ -n "$result" ]; then
+            country_count=$(echo "$result" | wc -l)
+            zenity --info --title="Countries by Region" --text="Countries corresponding to region/continent '$region':\n\n$result\n\nTotal countries: $country_count" width=600 --height=400
+        else
+            zenity --info --title="Countries by Region" --text="No countries found for the region/continent '$region'."
+        fi
+    else
+        zenity --error --text="Invalid input. Please enter a region/continent."
+    fi
+}
+
+
+# Function to display the total number of countries
+display_country_count() {
+ count=$(awk 'END {print NR}' <<< "$data")
+ zenity --info --title="Country Count" --text="Total number of countries in the dataset: $count"
+}
+
+validate_single_char() {
+ local input="$1"
+ if [ "${#input}" -eq 1 ]; then
+   echo "$input"
+ else
+   zenity --error --text "Invalid input. Please enter a single character."
+   exit 1
+ fi
+}
+
+validate_positive_integer() {
+ local input="$1"
+ if [[ "$input" =~ ^[1-9][0-9]*$ ]]; then
+   echo "$input"
+ else
+   zenity --error --text "Invalid input. Please enter a positive integer."
+   exit 1
+ fi
+}
+
+input_letter=$(zenity --entry --title="Filter Countries" --text="Enter a letter to filter countries:")
+input_letter=$(validate_single_char "$input_letter")
+
+input_length=$(zenity --entry --title="Filter Countries" --text="Enter a country name length to filter :")
+input_length=$(validate_positive_integer "$input_length")
+
+# Check if an argument is provided
+if [ -n "$input_letter" ] || [ -n "$input_length" ]; then
+ echo "Filtered countries:"
+ filtered_result=$(print_countries_with_regions "$input_letter" "$input_length")
+ if [ -n "$filtered_result" ]; then
+   echo "$filtered_result"
+ else
+   echo "No countries found based on the provided filter criteria."
+ fi
+else
+ echo "List of all countries and their regions/continents:"
+ print_countries_with_regions
+fi
+
+# Ask the user whether to sort the countries
+zenity --question --title="Sort Countries" --text="Do you want to sort the countries?"
+if [ $? -eq 0 ]; then
+ echo -e "\nSorting countries..."
+ {
+   print_sorted_by_country
+   sleep 1  # Ensure that the progress bar reaches 100
+ } | zenity --progress --title="Sorting" --text="Sorting..." --auto-close
+
+ # Display the sorted dialog box
+ zenity --info --title="Sorted Countries" --text="Countries have been sorted."
+else
+ echo "Countries will not be sorted."
+fi
+
+# Call the search_by_region_zenity function
+search_by_region_zenity
+
+# Call the display_country_count function to show the total country count
+ display_country_count
+
+# Ask the user if they want to continue or exit
+ zenity --question --title="Continue or Exit" --text="Do you want to continue?"
+ if [ $? -eq 1 ]; then
+   # User chose to exit, show a message and break out of the loop
+   zenity --info --title="Exiting Script" --text="Exiting the script."
+   break
+ fi
+done
+
+# If the loop breaks, ask the user if they want to restart
+zenity --question --title="Restart Script" --text="Do you want to restart the script?"
+if [ $? -eq 0 ]; then
+ # User chose to restart, show a message and execute the script again
+ zenity --info --title="Restarting Script" --text="Restarting the script."
+ exec "$0"
+else
+ # User chose not to restart, show a message and exit the script
+ zenity --info --title="Exiting Script" --text="Exiting the script."
+ exit 0
+fi
+done
